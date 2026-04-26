@@ -4,78 +4,106 @@ import RPi.GPIO as GPIO
 import time
 
 # ===================== Project UART Global Settings =====================
-# Transit Pin
 TX_PIN = {"CV50_TX": None}
-
-# Receive Pin
 RX_PIN = {"CV50_RX": None}
 
-# Baud rate
 BAUD_RATE = {"HS": 115200, "LS": 9600}
 BIT_DELAY = {"HS": 1.0 / 115200, "LS": 1.0 / 9600}
 SAMPLE_DELAY = {"HS": BIT_DELAY["HS"] / 2, "LS": BIT_DELAY["LS"] / 2}
 
+def uart_delay(duration):
+    """
+    This function enclosed for accurate delay
+    duration: unit : S
+    """
+    
+    end = time.perf_counter() + duration
+    while time.perf_counter() < end:
+        pass
+
 # ===================== UART Initialization =====================
-def UART_Init(tx_pin,rx_pin) -> None:
-    """Init the GPIO part for UART"""
+def UART_Init(tx_pin, rx_pin) -> None:
+    """
+    Initialize UART GPIO pins
+    Set TX as output with HIGH idle state, RX as input
+    """
     GPIO.setmode(GPIO.BCM)
-    # Initialize the send pin
     GPIO.setup(tx_pin, GPIO.OUT)
     GPIO.output(tx_pin, GPIO.HIGH)
-
-    # Initialize the receive pin   
     GPIO.setup(rx_pin, GPIO.IN)
 
 # ===================== UART sends one byte =====================
-def uart_send_byte(send_pin, speed: str, byte):
+def uart_send_byte(send_pin, speed: str, byte) -> int:
     """
-    UART timing transmission single-byte timing: 
-    start bit → 8-bit data (LSB first) → 
-    stop bit speed: "HS" or "LS"
+    Transmit one byte via UART
+    Format: start bit(1) + 8 data bits(LSB first) → stop bit(1)
+    Return: 0 = success, 1 = failure
     """
-    delay = BIT_DELAY[speed]
+    try:
+        if speed not in ["HS","LS"]:
+            return 1
+        if not isinstance(byte,int) or byte < 0 or byte > 255:
+            return 1
+        
+        delay = BIT_DELAY[speed]
 
-    # 1. Starting position
-    GPIO.output(send_pin, GPIO.LOW)
-    time.sleep(delay)
+        GPIO.output(send_pin, GPIO.LOW)
+        uart_delay(delay)
 
-    # 2. 8-bit data (low start)
-    for i in range(8):
-        bit = (byte >> i) & 0x01
-        GPIO.output(send_pin, bit)
-        time.sleep(delay)
+        for i in range(8):
+            bit = (byte >> i) & 0x01
+            GPIO.output(send_pin, bit)
+            uart_delay(delay)
 
-    # 3. Stoping position
-    GPIO.output(send_pin, GPIO.HIGH)
-    time.sleep(delay)
-
+        GPIO.output(send_pin, GPIO.HIGH)
+        uart_delay(delay)
+        return 0
+    except:
+        return 1
+    
 # ===================== send string =====================
 def uart_send_str(send_pin, speed: str, string):
+    """
+    Transmit a string via UART byte by byte
+    Convert each character to ASCII code and send
+    """
     for char in string:
         uart_send_byte(send_pin, speed, ord(char))
 
 # ===================== Receive One Bit =====================
 def uart_read_byte(recv_pin, speed: str):
+    """
+    Receive one byte via UART
+    Sample data at middle of each bit
+    Return: received byte value
+    """
     delay = BIT_DELAY[speed]
     sample_delay = SAMPLE_DELAY[speed]
 
-    # Waiting for starting position
+    timeout = time.time() + 0.1
     while GPIO.input(recv_pin) == GPIO.HIGH:
+        if time.time() > timeout:
+            return 0
         pass
 
-    time.sleep(sample_delay)
+    uart_delay(sample_delay)
 
     byte = 0
     for i in range(8):
-        time.sleep(delay)
+        uart_delay(delay)
         bit = GPIO.input(recv_pin)
         byte |= (bit << i)
 
-    time.sleep(delay)
+    uart_delay(delay)
     return byte
 
 # ===================== receive string =====================
 def uart_read_str(recv_pin, speed: str, timeout=1.0):
+    """
+    Receive string via UART with timeout
+    Stop when receiving \n or \r
+    Return: received string without blank characters
+    """
     start_time = time.time()
     recv_str = ""
     while time.time() - start_time < timeout:
@@ -89,3 +117,4 @@ def uart_read_str(recv_pin, speed: str, timeout=1.0):
     return recv_str.strip()
 
 #Driver for UART -- Matiner:Jiming Yang
+

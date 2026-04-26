@@ -37,13 +37,10 @@ def CV50_Read_Frame(timeout=0.2):
 
     # 1. Find frame header 0xDF
     while time.time() - start_time < timeout:
-        try:
-            byte = UART.uart_read_byte(RX_PIN, CV50_BAUD)
-            if byte == CV50_FRAME_HEAD:
-                buf.append(byte)
-                break
-        except:
-            continue
+        byte = UART.uart_read_byte(RX_PIN, CV50_BAUD)
+        if byte == CV50_FRAME_HEAD:
+            buf.append(byte)
+            break
 
     if not buf:
         return None
@@ -52,11 +49,8 @@ def CV50_Read_Frame(timeout=0.2):
     while len(buf) < CV50_FRAME_LEN:
         if time.time() - start_time >= timeout:
             return None
-        try:
-            byte = UART.uart_read_byte(RX_PIN, CV50_BAUD)
-            buf.append(byte)
-        except:
-            return None
+        byte = UART.uart_read_byte(RX_PIN, CV50_BAUD)
+        buf.append(byte)
 
     # 3. Validate fixed fields
     if buf[1] != CV50_DEV_ID or buf[2] != CV50_SYS_ID or buf[3] != CV50_MSG_ID or buf[5] != CV50_PAYLOAD_LEN:
@@ -98,8 +92,8 @@ def CV50_Get_Data():
 # ===================== Main Loop for Continuous Measurement =====================
 if __name__ == "__main__":
     # Set GPIO pins (match your hardware wiring)
-    UART.TX_PIN["CORVON_TOF_TX"] = 17
-    UART.RX_PIN["CORVON_TOF_RX"] = 27
+    UART.TX_PIN["CV50_TX"] = 17
+    UART.RX_PIN["CV50_RX"] = 27
 
     try:
         CV50_Init()
@@ -111,7 +105,7 @@ if __name__ == "__main__":
                 print(f"Seq: {seq:03d} | Dist: {dist_m:5.2f} m | Strength: {strength:5d}")
             else:
                 print("Waiting for valid data...")
-            time.sleep(0.01)  # 100Hz update rate
+            time.sleep(0.01)
 
     except KeyboardInterrupt:
         print("\nProgram exited")
