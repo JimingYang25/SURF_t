@@ -1,120 +1,220 @@
-#Driver for UART -- Matiner:Jiming Yang
+# Driver for MentorPi_UART -- Maintainer Jiming Yang
 
-import RPi.GPIO as GPIO
+import serial
 import time
 
-# ===================== Project UART Global Settings =====================
-TX_PIN = {"CV50_TX": None}
-RX_PIN = {"CV50_RX": None}
+#-------------------- Global setting --------------------------
 
-BAUD_RATE = {"HS": 115200, "LS": 9600}
-BIT_DELAY = {"HS": 1.0 / 115200, "LS": 1.0 / 9600}
-SAMPLE_DELAY = {"HS": BIT_DELAY["HS"] / 2, "LS": BIT_DELAY["LS"] / 2}
+# Dictionary mapping device names to their serial port paths
+serial_pingroups = {'CV50': '/dev/serial0', 'Others_...': None}
 
-def uart_delay(duration):
+# Dictionary mapping device names to their baud rates
+serial_baud_rates = {'CV50': 115200, 'Others...': None}
+
+# Dictionary to store active serial connections
+serial_connections = {}
+
+#--------------------- Init Device -----------------------------
+
+def UART_init(device_name: str) -> int:
     """
-    This function enclosed for accurate delay
-    duration: unit : S
+    Initialize UART serial port by device name.
+    para: device_name: The device name string.
+    ret: 0: success, 1: failure
     """
+    global serial_connections
     
-    end = time.perf_counter() + duration
-    while time.perf_counter() < end:
-        pass
+    # Check if device is already initialized
+    if device_name in serial_connections:
+        # If port is already open, return success
+        if serial_connections[device_name].is_open:
+            return 0
+        # If port exists but is closed, remove it from connections
+        del serial_connections[device_name]
 
-# ===================== UART Initialization =====================
-def UART_Init(tx_pin, rx_pin) -> None:
-    """
-    Initialize UART GPIO pins
-    Set TX as output with HIGH idle state, RX as input
-    """
-    GPIO.setmode(GPIO.BCM)
-    GPIO.setup(tx_pin, GPIO.OUT)
-    GPIO.output(tx_pin, GPIO.HIGH)
-    GPIO.setup(rx_pin, GPIO.IN)
+    # Get port path and baud rate from configuration dictionaries
+    port_path = serial_pingroups.get(device_name)
+    baud_rate = serial_baud_rates.get(device_name)
 
-# ===================== UART sends one byte =====================
-def uart_send_byte(send_pin, speed: str, byte) -> int:
-    """
-    Transmit one byte via UART
-    Format: start bit(1) + 8 data bits(LSB first) → stop bit(1)
-    Return: 0 = success, 1 = failure
-    """
+    # Return failure if device is not configured
+    if port_path is None or baud_rate is None:
+        return 1
+
     try:
-        if speed not in ["HS","LS"]:
-            return 1
-        if not isinstance(byte,int) or byte < 0 or byte > 255:
+        # Initialize serial port with explicit parameters for reliability
+        ser = serial.Serial(
+            port=port_path,
+            baudrate=baud_rate,
+            bytesize=serial.EIGHTBITS,      # 8 data bits (most common configuration)
+            parity=serial.PARITY_NONE,       # No parity bit
+            stopbits=serial.STOPBITS_ONE,    # 1 stop bit
+            timeout=1.0,                      # Read timeout in seconds
+            write_timeout=1.0                 # Write timeout in seconds
+        )
+        
+        # Small delay to ensure port stabilization after opening
+        time.sleep(0.05)
+        
+        # Verify port is actually open
+        if not ser.is_open:
             return 1
         
-        delay = BIT_DELAY[speed]
+        # Store the connection in our dictionary
+        serial_connections[device_name] = ser
+    except serial.SerialException as e:
+        # Capture common serial port errors:
+        # - Insufficient permissions (not in dialout group)
+        # - Port already occupied by another process
+        # - Device path does not exist
+        return 1
+    else:
+        return 0
 
-        GPIO.output(send_pin, GPIO.LOW)
-        uart_delay(delay)
+#-------------------- Data Transmission -----------------------------
 
-        for i in range(8):
-            bit = (byte >> i) & 0x01
-            GPIO.output(send_pin, bit)
-            uart_delay(delay)
+def UART_send(device_name: str, data: bytes) -> int:
+    """
+    Send bytes data to a specific device.
+    para: device_name: The device name string.
+          data: Bytes to send (e.g., b'hello').
+    ret: 0: success, 1: failure
+    """
+    global serial_connections
+    
+    # Check if device exists and is open
+    if device_name not in serial_connections:
+        return 1
+    if not serial_connections[device_name].is_open:
+        return 1
+        
+    try:
+        # Write data to serial port
+        serial_connections[device_name].write(data)
+    except:
+        # Catch any write errors (timeout, disconnect, etc.)
+        return 1
+        
+    return 0
 
-        GPIO.output(send_pin, GPIO.HIGH)
-        uart_delay(delay)
+
+def UART_receive(device_name: str, num_bytes: int = 128) -> bytes:
+    """
+    Receive bytes data from a specific device (non-blocking read).
+    May return fewer bytes than requested if timeout occurs.
+    para: device_name: The device name string.
+          num_bytes: Maximum number of bytes to read.
+    ret: Received bytes (returns empty bytes b"" on failure or timeout).
+    """
+    global serial_connections
+    
+    # Check if device exists and is open
+    if device_name not in serial_connections:
+        return b""
+    if not serial_connections[device_name].is_open:
+        return b""
+        
+    try:
+        # Read up to 'num_bytes' from serial port
+        # Returns immediately if timeout is reached
+        return serial_connections[device_name].read(num_bytes)
+    except:
+        # Catch any read errors
+        return b""
+
+
+def UART_read_exact(device_name: str, num_bytes: int) -> bytes:
+    """
+    Read EXACTLY 'num_bytes' from the device (blocking read).
+    Will block indefinitely or until timeout if insufficient data is available.
+    para: device_name: The device name string.
+          num_bytes: Exact number of bytes to read.
+    ret: Received bytes (returns empty bytes b"" on failure or timeout).
+    """
+    global serial_connections
+    
+    # Check if device exists and is open
+    if device_name not in serial_connections:
+        return b""
+    if not serial_connections[device_name].is_open:
+        return b""
+        
+    try:
+        # Read exactly 'num_bytes' - will wait until all data arrives
+        return serial_connections[device_name].readexactly(num_bytes)
+    except:
+        # Catch any read errors or timeout exceptions
+        return b""
+
+
+def UART_flush(device_name: str) -> int:
+    """
+    Flush (clear) both input and output serial buffers.
+    Use this before sending new commands to avoid reading stale data.
+    para: device_name: The device name string.
+    ret: 0: success, 1: failure
+    """
+    global serial_connections
+    
+    # Check if device exists and is open
+    if device_name not in serial_connections:
+        return 1
+    if not serial_connections[device_name].is_open:
+        return 1
+        
+    try:
+        # Clear input buffer (discard all received but unread data)
+        serial_connections[device_name].reset_input_buffer()
+        # Clear output buffer (discard all written but not transmitted data)
+        serial_connections[device_name].reset_output_buffer()
         return 0
     except:
+        # Catch any flush errors
         return 1
+
+#-------------------- Resource Management -----------------------------
+
+def UART_close(device_name: str) -> int:
+    """
+    Close a specific UART device and remove it from connections.
+    para: device_name: The device name string.
+    ret: 0: success, 1: failure
+    """
+    global serial_connections
     
-# ===================== send string =====================
-def uart_send_str(send_pin, speed: str, string):
-    """
-    Transmit a string via UART byte by byte
-    Convert each character to ASCII code and send
-    """
-    for char in string:
-        uart_send_byte(send_pin, speed, ord(char))
+    # Check if device exists in our connections
+    if device_name not in serial_connections:
+        return 1
+        
+    try:
+        # Close the port if it's open
+        if serial_connections[device_name].is_open:
+            serial_connections[device_name].close()
+        # Remove the device from our connections dictionary
+        del serial_connections[device_name]
+    except:
+        # Catch any close errors
+        return 1
+        
+    return 0
 
-# ===================== Receive One Bit =====================
-def uart_read_byte(recv_pin, speed: str):
+
+def UART_close_all() -> None:
     """
-    Receive one byte via UART
-    Sample data at middle of each bit
-    Return: received byte value
+    Close all opened UART devices and clear the connections dict.
+    Usually called in the 'finally' block of the main program to ensure
+    proper cleanup even if an exception occurs.
     """
-    delay = BIT_DELAY[speed]
-    sample_delay = SAMPLE_DELAY[speed]
-
-    timeout = time.time() + 0.1
-    while GPIO.input(recv_pin) == GPIO.HIGH:
-        if time.time() > timeout:
-            return 0
-        pass
-
-    uart_delay(sample_delay)
-
-    byte = 0
-    for i in range(8):
-        uart_delay(delay)
-        bit = GPIO.input(recv_pin)
-        byte |= (bit << i)
-
-    uart_delay(delay)
-    return byte
-
-# ===================== receive string =====================
-def uart_read_str(recv_pin, speed: str, timeout=1.0):
-    """
-    Receive string via UART with timeout
-    Stop when receiving \n or \r
-    Return: received string without blank characters
-    """
-    start_time = time.time()
-    recv_str = ""
-    while time.time() - start_time < timeout:
+    global serial_connections
+    # Iterate over a copy of the dictionary items to avoid modification during iteration
+    for name, ser in list(serial_connections.items()):
         try:
-            char = uart_read_byte(recv_pin, speed)
-            recv_str += chr(char)
-            if char in (ord('\n'), ord('\r')):
-                break
+            # Close the port if it's open
+            if ser.is_open:
+                ser.close()
         except:
+            # Ignore any errors during cleanup - we're shutting down anyway
             pass
-    return recv_str.strip()
+    # Clear the entire connections dictionary
+    serial_connections.clear()
 
-#Driver for UART -- Matiner:Jiming Yang
-
+# Driver for MentorPi_UART -- Maintainer Jiming Yang

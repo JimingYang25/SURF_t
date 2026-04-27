@@ -1,43 +1,61 @@
-# CV50 TOF 50M Driver -- Matiner:Jiming Yang
-# Dependences：MentorPi_UART.py
+# CV50 TOF 50M Driver -- Maintainer: Jiming Yang
+# Dependencies: MentorPi_UART.py
+
 import time
 import MentorPi_UART as UART
 
-# ===================== Protocol Constants =====================
-CV50_FRAME_HEAD = 0xDF # frame head
-CV50_DEV_ID     = 0x32 # device ID 
-CV50_SYS_ID     = 0x00 # system ID
-CV50_MSG_ID     = 0x40 # message ID 
-CV50_PAYLOAD_LEN= 0x04 # fixed 4 data digits
-CV50_FRAME_LEN  = 11   # fixed 11 digits
-CV50_BAUD       = "HS" # high speed 115200
-
-# Pin
-TX_PIN = UART.TX_PIN["CV50_TX"]
-RX_PIN = UART.RX_PIN["CV50_RX"]
+# ===================== Protocol Constants (From Datasheet) =====================
+CV50_FRAME_HEAD = 0xDF  # Frame header
+CV50_DEV_ID     = 0x32  # Device ID
+CV50_SYS_ID     = 0x00  # System ID
+CV50_MSG_ID     = 0x40  # Message ID
+CV50_PAYLOAD_LEN= 0x04  # Fixed payload length (4 bytes)
+CV50_FRAME_LEN  = 11    # Total frame length (11 bytes)
+CV50_DEV_NAME   = "CV50"# Logical device name in MentorPi_UART settings
 
 # ===================== Initialization =====================
-def CV50_Init():
-    """Initialize UART for CV50, baud rate fixed at 115200"""
-    UART.UART_Init(tx_pin=TX_PIN,rx_pin=RX_PIN)
+def CV50_Init() -> int:
+    """
+    Initialize CV50 via MentorPi_UART driver.
+    (Ensure 'CV50' is configured in MentorPi_UART.serial_pingroups)
+    ret: 0: success, 1: failure
+    """
+    return UART.UART_init(CV50_DEV_NAME)
 
-# ===================== Checksum Calculation (per datasheet) =====================
-def calc_checksum(frame_data):
-    """Sum of first 10 bytes, keep lower 8 bits"""
+# ===================== Helper: Read Single Byte =====================
+def _read_byte(timeout_seconds: float = 0.1) -> int:
+    """
+    Private helper: Read 1 byte from UART buffer.
+    ret: Byte value (0-255) or -1 on timeout/error
+    """
+    # We need to loop because UART_receive might return empty if buffer is empty
+    start_time = time.time()
+    while time.time() - start_time < timeout_seconds:
+        data = UART.UART_receive(CV50_DEV_NAME, 1)
+        if len(data) == 1:
+            return data[0]
+        time.sleep(0.001) # Avoid spamming CPU
+    return -1
+
+# ===================== Checksum Calculation =====================
+def calc_checksum(frame_data: list) -> int:
+    """
+    Calculate checksum: Sum of first 10 bytes, keep lower 8 bits.
+    """
     return sum(frame_data[:10]) & 0xFF
 
 # ===================== Read One Complete Frame =====================
-def CV50_Read_Frame(timeout=0.2):
+def CV50_Read_Frame(timeout: float = 0.2):
     """
-    Read and validate one data frame
+    Read and validate one complete 11-byte data frame.
     Return: 11-byte frame list / None (timeout or invalid)
     """
     buf = []
     start_time = time.time()
 
-    # 1. Find frame header 0xDF
+    # 1. Find Frame Header (0xDF)
     while time.time() - start_time < timeout:
-        byte = UART.uart_read_byte(RX_PIN, CV50_BAUD)
+        byte = _read_byte()
         if byte == CV50_FRAME_HEAD:
             buf.append(byte)
             break
@@ -49,14 +67,18 @@ def CV50_Read_Frame(timeout=0.2):
     while len(buf) < CV50_FRAME_LEN:
         if time.time() - start_time >= timeout:
             return None
-        byte = UART.uart_read_byte(RX_PIN, CV50_BAUD)
-        buf.append(byte)
+        byte = _read_byte()
+        if byte != -1:
+            buf.append(byte)
 
-    # 3. Validate fixed fields
-    if buf[1] != CV50_DEV_ID or buf[2] != CV50_SYS_ID or buf[3] != CV50_MSG_ID or buf[5] != CV50_PAYLOAD_LEN:
+    # 3. Validate fixed fields (Device ID, System ID, etc.)
+    if (buf[1] != CV50_DEV_ID or 
+        buf[2] != CV50_SYS_ID or 
+        buf[3] != CV50_MSG_ID or 
+        buf[5] != CV50_PAYLOAD_LEN):
         return None
 
-    # 4. Validate checksum
+    # 4. Validate Checksum
     if calc_checksum(buf) != buf[10]:
         return None
 
@@ -65,50 +87,60 @@ def CV50_Read_Frame(timeout=0.2):
 # ===================== Parse Distance & Signal Strength =====================
 def CV50_Get_Data():
     """
+    Blocking read to get measurement data.
     Return:
-    - distance_mm: distance in millimeters, -1 on error
-    - distance_m: distance in meters
-    - signal_strength: signal strength value
-    - seq: packet sequence number
+        tuple (distance_mm, distance_m, signal_strength, seq)
+        Returns (-1, -1, -1, -1) on error
     """
     frame = CV50_Read_Frame()
     if not frame:
         return -1, -1, -1, -1
 
-    # Parse fields
+    # Extract fields from buffer
     seq = frame[4]
     dist_low = frame[6]
     dist_high = frame[7]
     strength_low = frame[8]
     strength_high = frame[9]
 
-    # Calculate values
+    # Calculate values (Little Endian / Big Endian? Check datasheet if swapped)
+    # Current logic: High << 8 | Low
     distance_mm = (dist_high << 8) | dist_low
     distance_m = distance_mm / 1000.0
     signal_strength = (strength_high << 8) | strength_low
 
     return distance_mm, distance_m, signal_strength, seq
 
-# ===================== Main Loop for Continuous Measurement =====================
+# ===================== Main Loop Example =====================
 if __name__ == "__main__":
-    # Set GPIO pins (match your hardware wiring)
-    UART.TX_PIN["CV50_TX"] = 17
-    UART.RX_PIN["CV50_RX"] = 27
-
     try:
-        CV50_Init()
-        print("Start measurement (Ctrl+C to exit)\n")
+        # 1. Initialize Driver
+        if CV50_Init() != 0:
+            print("[ERROR] CV50 Init Failed! Check wiring or permissions.")
+            exit(1)
         
+        print("[OK] CV50 Initialized")
+        print("Start measurement (Ctrl+C to exit)\n")
+        print("-" * 50)
+        
+        # 2. Main Loop
         while True:
             dist_mm, dist_m, strength, seq = CV50_Get_Data()
+            
             if dist_mm >= 0:
-                print(f"Seq: {seq:03d} | Dist: {dist_m:5.2f} m | Strength: {strength:5d}")
+                print(f"Seq: {seq:03d} | Dist: {dist_m:6.3f} m | Strength: {strength:5d}")
             else:
-                print("Waiting for valid data...")
-            time.sleep(0.01)
+                # Uncomment below if you want to see errors, or keep silent for cleaner output
+                # print("Lost frame...", end='\r') 
+                pass
+                
+            # time.sleep(0.01) # Usually not needed, let CV50_Read_Frame handle timing
 
     except KeyboardInterrupt:
-        print("\nProgram exited")
+        print("\n\n[User Exit] Program stopped by Ctrl+C")
     finally:
-        import RPi.GPIO as GPIO
-        GPIO.cleanup()
+        # 3. Cleanup
+        UART.UART_close_all()
+        print("[OK] UART ports closed")
+
+# CV50 TOF 50M Driver -- Maintainer: Jiming Yang
