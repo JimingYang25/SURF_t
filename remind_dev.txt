@@ -1,0 +1,50 @@
+====================================================================
+  Raspberry Pi 5 - Hardware Interface & /dev Device Mapping
+  Maintainer: Jiming Yang
+  This txt is reminder for developer,no other use!
+====================================================================
+
+Communication   | Device File         | BCM (Function)                          | Board Pin (Physical)
+------------------------------------------------------------------------------------------
+UART0 (Main)    | /dev/ttyAMA0        | TX: BCM 14, RX: BCM 15                 | TX: Pin 8, RX: Pin 10
+I2C-1           | /dev/i2c-1          | SDA: BCM 2, SCL: BCM 3                 | SDA: Pin 3, SCL: Pin 5
+SPI0 CS0        | /dev/spidev0.0      | MOSI: BCM 10, MISO: BCM 9,             | MOSI: Pin 19, MISO: Pin 21,
+                |                     | SCLK: BCM 11, CE0: BCM 8               | SCLK: Pin 23, CE0: Pin 24
+SPI0 CS1        | /dev/spidev0.1      | CE1: BCM 7                             | CE1: Pin 26
+GPIO Chip       | /dev/gpiochip4      | All GPIO lines                         | Entire 40-pin header
+USB UART        | /dev/ttyUSB0        | N/A (USB connector)                    | USB port
+USB Virtual COM | /dev/ttyACM0        | N/A (USB connector)                    | USB port
+Debug UART (5)  | /dev/ttyAMA10       | N/A (on-board JST)                     | 3-pin JST (debug only)
+
+====================================================================
+  Extended Device Tree Overlays & Additional Interfaces
+====================================================================
+Function                | Overlay / Config                   | Access / Device Node
+------------------------------------------------------------------------------------------
+Hardware PWM (2 chan)   | dtoverlay=pwm-2chan                | /sys/class/pwm/pwmchip0 (BCM 12/13)
+Second I2C Bus          | dtoverlay=i2c3                     | /dev/i2c-3 (BCM 2/3 or others)
+CSI Camera              | camera_auto_detect=1               | /dev/video0, /dev/media0 (V4L2)
+DSI Display             | display_auto_detect=1              | /dev/fb0 (framebuffer)
+1-Wire Sensor           | dtoverlay=w1-gpio                  | /sys/bus/w1/devices/
+CAN Bus (MCP2515)       | dtoverlay=mcp2515                  | can0 (network interface)
+Bluetooth               | dtoverlay=miniuart-bt              | hci0 (check with hciconfig)
+Wi-Fi (built-in)        | (built-in, no overlay)             | wlan0 (network interface)
+USB Webcam              | (plug-and-play)                    | /dev/video0, /dev/media0
+
+====================================================================
+  Quick Reference Commands
+====================================================================
+# List UART devices
+ls -l /dev/ttyAMA* /dev/ttyUSB* /dev/ttyACM*
+
+# Scan I2C bus
+i2cdetect -y 1
+
+# List GPIO chips
+ls -l /dev/gpiochip*
+
+# List all tty devices
+ls -l /dev/tty*
+
+# Check current user's groups
+groups ming
