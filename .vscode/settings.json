@@ -1,0 +1,9 @@
+{{
+    // 其他已有的配置...
+
+    // VSCode专属Git代理配置（只对VSCode内部的Git生效）
+    "git.httpProxy": "http://127.0.0.1:7897",
+    "git.httpsProxy": "http://127.0.0.1:7897",
+    "git.noProxy": "localhost,127.0.0.1,*.local"
+}
+}

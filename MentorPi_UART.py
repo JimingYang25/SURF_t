@@ -6,7 +6,7 @@ import time
 #-------------------- Global setting --------------------------
 
 # Dictionary mapping device names to their serial port paths
-serial_pingroups = {'CV50': '/dev/serial0', 'Others_...': None}
+serial_pingroups = {'CV50': '/dev/ttyAMA0', 'Others_...': None}
 
 # Dictionary mapping device names to their baud rates
 serial_baud_rates = {'CV50': 115200, 'Others...': None}
