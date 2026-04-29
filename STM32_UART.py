@@ -62,11 +62,13 @@ def parse_frame(frame: bytes) -> tuple[int, int, bytes] | None:
 #---------------------- RRCLite Correspond Class ------------------------
 
 class RRCLite_Serial:
-    
-    def __init__(self):
+    __MAX_BUFFER = 4096
+    def __init__(self,timeout=1.0):
         self.device_name = "RRCLite"
         self.buffer = bytearray()
         self.error_status=0
+        self.timeout=timeout
+        
 
     def error_handler_(self):
         """0 : success , others: error number """
@@ -82,7 +84,7 @@ class RRCLite_Serial:
 
     def init_(self) -> int:
         """Open serial port. Return 0 or error 1."""
-        ret = UART.UART_init(device_name=self.device_name)
+        ret = UART.UART_init(device_name=self.device_name,timeout=self.timeout)
         if ret != 0:
             self.error_status=1
             self.error_handler_()
@@ -108,6 +110,10 @@ class RRCLite_Serial:
         raw = UART.UART_receive(self.device_name, num_bytes=256)
         if raw:
             self.buffer.extend(raw)
+        
+        # Handle buffer overload
+        if len(self.buffer) > __MAX_BUFFER:
+            self.buffer.clear()
 
         while len(self.buffer) >= 6:
             if self.buffer[0:2] != HEADER:
@@ -136,6 +142,6 @@ class RRCLite_Serial:
            return 1
        return 0
 
-
+# Driver for RCCLite — Maintainer: Jiming Yang
 
 

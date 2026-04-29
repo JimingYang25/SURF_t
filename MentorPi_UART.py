@@ -19,7 +19,7 @@ serial_connections = {}
 def UART_init(device_name: str,timeout = 1.0) -> int:
     """
     Initialize UART serial port by device name.
-    para: device_name: The device name string.
+    para: device_name: The device name string. set timeout to 0 in ros2 time_callback
     ret: 0: success, 1: failure
     """
     global serial_connections
@@ -48,7 +48,7 @@ def UART_init(device_name: str,timeout = 1.0) -> int:
             bytesize=serial.EIGHTBITS,      # 8 data bits (most common configuration)
             parity=serial.PARITY_NONE,       # No parity bit
             stopbits=serial.STOPBITS_ONE,    # 1 stop bit
-            timeout=timeout,                      # Read timeout in seconds
+            timeout=timeout,                      # Read timeout in seconds 
             write_timeout=1.0                 # Write timeout in seconds
         )
         
