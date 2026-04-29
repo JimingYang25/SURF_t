@@ -6,17 +6,17 @@ import time
 #-------------------- Global setting --------------------------
 
 # Dictionary mapping device names to their serial port paths
-serial_pingroups = {'CV50': '/dev/ttyAMA0', 'Others_...': None}
+serial_pingroups = {'RRCLite': '/dev/ttyAMA0', 'Others_...': None}
 
 # Dictionary mapping device names to their baud rates
-serial_baud_rates = {'CV50': 115200, 'Others...': None}
+serial_baud_rates = {'RRCLite': 115200, 'Others...': None}
 
 # Dictionary to store active serial connections
 serial_connections = {}
 
 #--------------------- Init Device -----------------------------
 
-def UART_init(device_name: str) -> int:
+def UART_init(device_name: str,timeout = 1.0) -> int:
     """
     Initialize UART serial port by device name.
     para: device_name: The device name string.
@@ -48,7 +48,7 @@ def UART_init(device_name: str) -> int:
             bytesize=serial.EIGHTBITS,      # 8 data bits (most common configuration)
             parity=serial.PARITY_NONE,       # No parity bit
             stopbits=serial.STOPBITS_ONE,    # 1 stop bit
-            timeout=1.0,                      # Read timeout in seconds
+            timeout=timeout,                      # Read timeout in seconds
             write_timeout=1.0                 # Write timeout in seconds
         )
         
@@ -173,7 +173,7 @@ def UART_flush(device_name: str) -> int:
 
 #-------------------- Resource Management -----------------------------
 
-def UART_close(device_name: str) -> int:
+def UART_deinit(device_name: str) -> int:
     """
     Close a specific UART device and remove it from connections.
     para: device_name: The device name string.
@@ -198,7 +198,7 @@ def UART_close(device_name: str) -> int:
     return 0
 
 
-def UART_close_all() -> None:
+def UART_deinit_all() -> None:
     """
     Close all opened UART devices and clear the connections dict.
     Usually called in the 'finally' block of the main program to ensure
@@ -216,5 +216,9 @@ def UART_close_all() -> None:
             pass
     # Clear the entire connections dictionary
     serial_connections.clear()
+
+#------------------------- Addition for ROS2 -----------------------------------
+
+    
 
 # Driver for MentorPi_UART -- Maintainer Jiming Yang
